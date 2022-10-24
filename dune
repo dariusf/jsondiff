@@ -10,3 +10,6 @@
  (dev
   (flags
    (:standard -warn-error -A))))
+
+(cram
+ (deps %{bin:jsondiff}))
