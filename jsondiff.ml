@@ -413,8 +413,11 @@ let channel_get_lines (channel : in_channel) : string list =
         | Some h -> get_lines_acc (fun result -> return (h :: result)) channel
   in get_lines_acc id channel
 
-let get_lines (file : string) : string list =
+let _get_lines (file : string) : string list =
   with_open_file file channel_get_lines
+
+let get_all (file : string) : string =
+  with_open_file file (fun ic -> really_input_string ic (in_channel_length ic))
 
 let print_diff : string option -> unit = function
   | None -> ()
@@ -437,10 +440,10 @@ let () =
   else
     match (!color, !files) with
       | (color, [left; right]) ->
-          let l = get_lines left in
-          let r = get_lines right
-          in (try List.iter print_diff
-                  (List.map2
+          let l = get_all left in
+          let r = get_all right
+          in (try print_diff
+                  (
                     (diff_strings
                       !percentage
                       !numeric
