@@ -1,2 +1,2 @@
 (cram
- (deps ../jsondiff.exe))
+ (deps %{bin:jsondiff}))

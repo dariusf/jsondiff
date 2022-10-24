@@ -1,8 +1,6 @@
 The example from jsondiff.com.
 
-Ensure we use a relative path, or the executable that is installed globally by opam is used.
-
-  $ ../../jsondiff.exe a.json b.json
+  $ jsondiff a.json b.json
   {
     "Aidan Gillen": {
       "aboolean": [| true, "true" |],

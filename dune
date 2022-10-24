@@ -1,6 +1,7 @@
 
 (executable
  (name jsondiff)
+ (public_name jsondiff)
  ; (preprocess (pps ppx_deriving.show))
  (libraries yojson unix easy-format biniou simple-diff)
  )
