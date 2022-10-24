@@ -239,12 +239,14 @@ let to_string ?color ?std x =
 
 let id : 'a -> 'a = fun x -> x
 
-let rec combine_with (f : 'a -> 'b -> 'c) (xs : 'a list) (ys : 'b list)
-                     : 'c list =
-  match (xs, ys) with
-    | ([], []) -> []
-    | (x :: xs, y :: ys) -> (f x y) :: (combine_with f xs ys)
-    | (_, _) -> raise (Invalid_argument "combine_with")
+let map2i path f xs ys =
+  try
+    List.map2 (fun x y -> x, y) xs ys
+    |> List.mapi (fun i (x, y) -> f i x y)
+  with Invalid_argument s ->
+    raise (Invalid_argument (Format.asprintf "%s: %s" s (String.concat "/" path)))
+
+let i2s = string_of_int
 
 let option_map (f : 'a -> 'b) : 'a option -> 'b option = function
   | None -> None
@@ -256,16 +258,18 @@ let sort_assoc : ('a * 'b) list -> ('a * 'b) list =
 (* http://sds.podval.org/ocaml-sucks.html#library *)
 let round (x : float) : int = int_of_float (floor (x +. 0.5))
 
-let rec diff_assoc (percentage : bool)
+let rec diff_assoc (path : string list)
+                   (percentage : bool)
                    (numeric : bool)
                    (l : (string * json_withdiff) list)
                    (r : (string * json_withdiff) list)
                    : (string * json_withdiff) list =
   let l_sorted = sort_assoc l in
   let r_sorted = sort_assoc r
-  in merge percentage numeric l_sorted r_sorted
+  in merge 0 path percentage numeric l_sorted r_sorted
 
-and merge (percentage : bool)
+and merge (i : int) (path : string list)
+          (percentage : bool)
           (numeric : bool)
           (l : (string * json_withdiff) list)
           (r : (string * json_withdiff) list)
@@ -275,14 +279,15 @@ and merge (percentage : bool)
     | (rest, []) -> List.map (fun (s, j) -> (s, Diff ((Some j), None))) rest
     | ((s1, j1) :: l, (s2, j2) :: r) ->
         if s1 = s2 then
-          (s1, diff percentage numeric j1 j2) :: (merge percentage numeric l r)
+          (s1, diff (s1 :: path) percentage numeric j1 j2) :: (merge (i+1) path percentage numeric l r)
         else if s1 < s2 then
           (s1, Diff ((Some j1), None))
-                :: (merge percentage numeric l ((s2, j2) :: r))
+                :: (merge (i+1) path percentage numeric l ((s2, j2) :: r))
         else (* s1 > s2 *)
-          (s2, Diff (None, (Some j2))) :: (merge percentage numeric ((s1, j1) :: l) r)
+          (s2, Diff (None, (Some j2))) :: (merge (i+1) path percentage numeric ((s1, j1) :: l) r)
 
-and diff (percentage : bool)
+and diff (path : string list)
+         (percentage : bool)
          (numeric : bool)
          (l : json_withdiff)
          (r : json_withdiff)
@@ -323,11 +328,11 @@ and diff (percentage : bool)
         if x = y then
           List x
         else
-          List (combine_with (diff percentage numeric) x y)
+          List (map2i path (fun i a b -> diff (i2s i :: path) percentage numeric a b) x y)
     | (Tuple x, Tuple y) ->
-        if x = y then Tuple x else Tuple (combine_with (diff percentage numeric) x y)
+        if x = y then Tuple x else Tuple (map2i path (fun i a b -> diff (i2s i :: path) percentage numeric a b) x y)
     | (Assoc x, Assoc y) ->
-        if x = y then Assoc x else Assoc (diff_assoc percentage numeric x y)
+        if x = y then Assoc x else Assoc (diff_assoc path percentage numeric x y)
     | (Variant (t1, j1), Variant (t2, j2)) ->
         if t1 = t2 then
           (if j1 = j2 then
@@ -345,7 +350,7 @@ and diff (percentage : bool)
           Diff (Some (Variant (t1, j1)), Some (Variant (t2, j2)))
     | (x, y) -> Diff (Some x, Some y)
 
-let rec coerce : Y.Safe.json -> json_withdiff = function
+let rec coerce : Y.Safe.t -> json_withdiff = function
   | `Assoc sjs -> Assoc (List.map (fun (s, j) -> (s, coerce j)) sjs)
   | `Bool b -> Bool b
   | `Float f -> Float f
@@ -365,7 +370,7 @@ let diff_strings (percentage : bool)
                  : string option =
   let l_json = coerce (Y.Safe.from_string l) in
   let r_json = coerce (Y.Safe.from_string r) in
-  let diff = diff percentage numeric l_json r_json
+  let diff = diff [] percentage numeric l_json r_json
   in if l_json = diff then
       None
      else
@@ -419,14 +424,14 @@ let () =
           let l = get_lines left in
           let r = get_lines right
           in (try List.iter print_diff
-                  (combine_with
+                  (List.map2
                     (diff_strings
                       !percentage
                       !numeric
                       (if color then true else Unix.isatty Unix.stdout))
                   l r)
           with Invalid_argument s ->
-            failwith "Different length files, try using plain 'diff' first.")
+            failwith s)
       | _ -> Arg.usage options msg
 
 (*let test : unit =
