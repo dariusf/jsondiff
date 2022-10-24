@@ -1,0 +1,11 @@
+
+(executable
+ (name jsondiff)
+ (libraries yojson unix easy-format biniou)
+ ; (preprocess (pps ppx_deriving.show))
+ )
+
+(env
+ (dev
+  (flags
+   (:standard -warn-error -A))))
