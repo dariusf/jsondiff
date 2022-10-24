@@ -78,6 +78,11 @@ type json_withdiff =
     | DiffNumeric of int
     | DiffPercentage of int
 
+module SD = Simple_diff.Make (struct
+  type t = json_withdiff
+  let compare = Stdlib.compare
+end)
+
 exception Json_error of string
 
 (* JSON formatting, lots copied from Yojson. *)
@@ -324,11 +329,22 @@ and diff (path : string list)
           String x
         else
           Diff (Some (String x), Some (String y))
+    | (List x, List y) when x = y ->
+      List x
+    | (List x, List y) when List.length x = List.length y ->
+      List (map2i path (fun i a b -> diff (i2s i :: path) percentage numeric a b) x y)
     | (List x, List y) ->
-        if x = y then
-          List x
-        else
-          List (map2i path (fun i a b -> diff (i2s i :: path) percentage numeric a b) x y)
+      let xy =
+        SD.get_diff (Array.of_list x) (Array.of_list y)
+        |> List.concat_map (fun d ->
+          match d with
+          | SD.Equal e -> Array.to_list e
+          | SD.Deleted e -> e |> Array.to_list
+            |> List.map (fun e -> Diff (Some e, None))
+          | SD.Added e -> e |> Array.to_list
+            |> List.map (fun e -> Diff (None, Some e))
+          )
+      in List xy
     | (Tuple x, Tuple y) ->
         if x = y then Tuple x else Tuple (map2i path (fun i a b -> diff (i2s i :: path) percentage numeric a b) x y)
     | (Assoc x, Assoc y) ->
