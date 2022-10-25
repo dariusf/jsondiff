@@ -378,7 +378,38 @@ let rec coerce : Y.Safe.t -> json_withdiff = function
   | `Tuple xs -> Tuple (List.map coerce xs)
   | `Variant (s, jo) -> Variant (s, option_map coerce jo)
 
-let diff_strings (percentage : bool)
+(** Remove unchanged subtrees. The meaning of a diff changes from a
+    snapshot of both states to something like a patch. *)
+let rec filter_diff json =
+  match json with
+  | Null
+  | Bool _
+  | Int _
+  | Intlit _
+  | Float _
+  | String _ -> json, false
+  | Diff _
+  | DiffNumeric _
+  | DiffPercentage _ -> json, true
+  | Assoc kvs ->
+    let res = List.filter_map (fun (k, v) ->
+      let v1, c = filter_diff v in
+      if c then Some ((k, v1), c) else None) kvs
+    in
+    let changed = List.exists snd res in
+    let res = Assoc (List.map fst res) in
+    res, changed
+  | List js ->
+    (* lists are different from objects: ordering matters so unchanged
+       elements are required to indicate what has changed. we keep them
+       and just propagate an indication of whether a subtree has changed. *)
+    let changed = List.exists (fun j -> filter_diff j |> snd) js in
+    json, changed
+  | Tuple _ -> failwith "Tuple"
+  | Variant _ -> failwith "Variant"
+
+let diff_strings (diff_only : bool)
+                 (percentage : bool)
                  (numeric : bool)
                  (color : bool)
                  (l : string)
@@ -386,8 +417,9 @@ let diff_strings (percentage : bool)
                  : string option =
   let l_json = coerce (Y.Safe.from_string l) in
   let r_json = coerce (Y.Safe.from_string r) in
-  let diff = diff [] percentage numeric l_json r_json
-  in if l_json = diff then
+  let diff = diff [] percentage numeric l_json r_json in
+  let diff = if diff_only then fst @@ filter_diff diff else diff in
+  if l_json = diff then
       None
      else
       Some (to_string ~color:color diff)
@@ -428,7 +460,9 @@ let () =
   let color = ref false in
   let numeric = ref false in
   let percentage = ref false in
-  let options = [ ("-color", Arg.Set color, "Always color output");
+  let diff_only = ref false in
+  let options = [ ("-diff-only", Arg.Set diff_only, "Show only changes");
+                  ("-color", Arg.Set color, "Always color output");
                   ("-numeric", Arg.Set numeric, "Compare numeric values numerically");
                   ("-percentage", Arg.Set percentage,
                     "Print numeric values percentage difference") ] in
@@ -441,16 +475,15 @@ let () =
     match (!color, !files) with
       | (color, [left; right]) ->
           let l = get_all left in
-          let r = get_all right
-          in (try print_diff
-                  (
-                    (diff_strings
-                      !percentage
-                      !numeric
-                      (if color then true else Unix.isatty Unix.stdout))
-                  l r)
-          with Invalid_argument s ->
-            failwith s)
+          let r = get_all right in
+          let diff =
+            try
+              diff_strings !diff_only !percentage !numeric
+                (if color then true else Unix.isatty Unix.stdout) l r
+            with Invalid_argument s ->
+              failwith s
+          in
+          print_diff diff
       | _ -> Arg.usage options msg
 
 (*let test : unit =
