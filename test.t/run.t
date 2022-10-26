@@ -66,3 +66,5 @@ The example from jsondiff.com.
     ],
     "Clarke Peters": [- null -]
   }
+
+  $ jsondiff list1.json list2.json
